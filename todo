@@ -1,8 +1,28 @@
-History Service
-===============
-1 [x] ( ) HistorySparqlHandler - Make the class a thread
-2 [ ] (!) Use only one DBWriter instance to avoid concurrency
-
-Ciao
+Core
 ====
-3 [ ] ( ) Ciao tasks
+14 [?] (!) ID assigned to new TODOs must be the last ID + 1 not the count
+11 [x] (L) Align output in columns. The id may be of several digits
+8 [ ] (L) Highlight must overwrite everything
+7 [ ] (H) Add feedback to user and check result
+6 [ ] (H) Options support
+5 [ ] ( ) Delete a category
+4 [ ] (L) config file
+1 [ ] (H) Create TODO file if it doesnt exist
+
+Features
+========
+2 [ ] ( ) Edit TODO
+
+Commit
+======
+3 [ ] (H) Create commit feature to build changelog file and clean TODO
+
+Sort
+====
+9 [ ] (H) Order by priority
+10 [?] (H) Filter by priority or status
+
+Multiuser
+=========
+13 [ ] ( ) Use timestamps, emails etc..
+12 [ ] ( ) Allow users to collaborate on the TODOs

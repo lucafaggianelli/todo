@@ -120,29 +120,111 @@ TODOTXT_SORT_COMMAND=${TODOTXT_SORT_COMMAND:-env LC_COLLATE=C sort -f -k2}
 TODOTXT_DISABLE_FILTER=${TODOTXT_DISABLE_FILTER:-}
 TODOTXT_FINAL_FILTER=${TODOTXT_FINAL_FILTER:-cat}
 
+# Colors
+BLACK=30
+RED=31
+GREEN=32
+YELLOW=33
+BLUE=34
+MAGENTA=35
+CYAN=36
+WHITE=37
+
+# Style
+BOLD=1
+NORMAL=0
+
+TODO_COL_NO=`echo -e "\e[0m"`
+
+TODO_COL_CAT=`echo -e "\e[$BOLD;${BLUE}m"`
+
+TODO_COL_NEW=`echo -e "\e[$NORMAL;$(( $GREEN+10 ))m"`
+TODO_COL_DEL=`echo -e "\e[$NORMAL;$(( $RED+10 ))m"`
+
+TODO_COL_DONE=`echo -e "\e[$BOLD;${RED}m"`
+TODO_COL_PEND=`echo -e "\e[$BOLD;${YELLOW}m"`
+
+TODO_COL_BUG=`echo -e "\e[$BOLD;${RED}m"`
+TODO_COL_H=`echo -e "\e[$BOLD;${YELLOW}m"`
+TODO_COL_L=`echo -e "\e[$BOLD;${GREEN}m"`
+
+
 ######## Options parsing end
 
 DEBUG() {
     [ $_DEBUG -ne 0 ] && $@
 }
 
+_countTodo() {
+    TODO_COUNT=`sed -n -e '/^[0-9]* \[/p' $TODO_LIST | sed -n '$='`
+}
+
+_lastTodoID() {
+    TODO_LAST_ID=`sed -n -e "/^[0-9]/p" $TODO_LIST |
+                  sort -n |
+                  sed -n -e '$p' |
+                  sed "s/^\([0-9][0-9]*\).*/\1/"`
+}
+
 add() {
+    # Create a TODO on a given category
 
-    cat=$1
-    shift
-    todo="$@"
-    # make it smarter with ! ? etc...
+    # Get category
+    cat=$1; shift
 
-    id=`sed -n -e "/^$cat/,/^[a-zA-Z][.]*/p" $TODO_LIST |
-          sed -n -e "/^[0-9]* \[/p" |
-          sed 's/^\([0-9]*\) .*/\1/' |
-          sed -n '$p'`
+    if [ $# -eq 0 ]; then
+        echo "Cant create an empty TODO in category $cat"
+        exit 1;
+    fi
 
-    new_id=$(( $id+1 ))
+    found_cat=`lsCategories | sed -n -e "/^$cat$/p"`
+    if [ "$found_cat" != "$cat" ]; then
+        echo "Category $cat doesn't exist, creating..."
+        createCategory $cat
+    fi
 
-    todo="$(( $id+1 )) [ ] ( ) $todo"
+    # Default values
+    mark=' '
+    priority=' '
 
-    sed "/^$id/a $todo" $TODO_LIST
+    # Search mark and prio at the beginning of the sentence
+    for i in "$@"; do
+        case $i in
+            '?' | "x" | "o") mark=$i; shift ;;
+            '!' | "L" | "H" | "0") priority=$i; shift ;;
+
+            # Out when you find the first letter, otherwise treat chars in
+            # the TODO as priority and mark
+            * ) break ;;
+        esac
+    done
+
+    # Count all the TODOs
+    _lastTodoID
+    id=$(( $TODO_LAST_ID+1 ))
+
+    # Line number of the '=' below category name
+    line=$(( `sed -n -e "/^$cat$/=" $TODO_LIST`+1 ))
+    if [ -z $line ]; then exit 1; fi
+
+    # Write the TODO
+    todo="$id [$mark] ($priority) $@"
+    sed -i "${line}a $todo" $TODO_LIST
+
+    lsTodoCategories $cat | highlightTodo $id $TODO_COL_NEW
+    echo "Created TODO in $cat"
+}
+
+delete() {
+    # Delete a todo
+    #
+    # $*: ids
+
+    for id in $*; do
+        sed -i "/^$id/d" $TODO_LIST
+    done
+
+    lsTodoAll | highlightTodo $id $TODO_COL_DEL
 }
 
 mark() {
@@ -161,9 +243,11 @@ mark() {
     # TODO: put ids in or so dont iterate
     shift;
     for id in $*; do
-        echo $id
-        sed "s/\($id \)\[.\]/\1[$mark]/" $TODO_LIST
+        sed -i "s/\($id \)\[.\]/\1[$mark]/" $TODO_LIST
     done
+
+    lsTodoAll
+    echo "TODOs $* marked as $mark"
 }
 
 setPriority() {
@@ -182,8 +266,29 @@ setPriority() {
     # TODO: put ids in or so dont iterate
     shift;
     for id in $*; do
-        sed "s/\($id \[.\] \)(.)/\1($priority)/" $TODO_LIST
+        sed -i "s/\($id \[.\] \)(.)/\1($priority)/" $TODO_LIST
     done
+
+    lsTodoAll
+    echo "TODOs $* now has priority $priority"
+}
+
+
+createCategory() {
+    # Create a new category
+    #
+    # $1: cat name
+
+    cat=$1
+
+    # Find string length and print N '='
+    equals=`printf "%${#cat}s" | tr " " "="`
+
+    if [ `stat -c %s $TODO_LIST` -eq 0 ]; then
+        echo -e "$cat\n$equals" > $TODO_LIST
+    else
+        sed -i '$a'"\\\n$cat\n$equals" $TODO_LIST
+    fi
 }
 
 lsCategories() {
@@ -196,16 +301,89 @@ lsTodoCategories() {
     #
     # $1: category
 
-    #category=$1
-
     for category in "$@"; do
-        echo $category
-        sed -n -e "/^$category/,/^[a-zA-Z][.]*/p" $TODO_LIST | sed -n -e "/^[0-9]* \[/p"
+        #sed -n -e "/^$category/,/^[a-zA-Z][.]*/p" $TODO_LIST | sed -n -e "/^[0-9]* \[/p" | prettify
+        sed -n -e "/^$category/,/^$/p" $TODO_LIST | sed '$d' | prettify
     done
 }
 
 lsTodoAll() {
-    less $TODO_LIST
+    _lastTodoID
+    if [ $TODO_LAST_ID -le 9 ]; then
+        TODO_ID_DIGITS=1
+    elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
+        TODO_ID_DIGITS=2
+        #cat $TODO_LIST | sed "s/^\([0-9]\) \[/ \1 [/" | prettify
+
+    elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
+        TODO_ID_DIGITS=3
+        #cat $TODO_LIST | sed "s/^\([0-9]\) \[/  \1 [/" |
+        #    sed "s/^\([0-9]\{2\}\) \[/ \1 [/" | prettify
+
+    else
+        TODO_ID_DIGITS=4 # greater than 1000!!!
+    fi
+
+    cat $TODO_LIST | prettify
+}
+
+filter() {
+    # Filter by params
+
+
+    # Default
+    status='.'
+    priority='.'
+
+    # Search status and priority
+    for i in "$@"; do
+        case $i in
+            '?' | "x" | "o") status=$i; shift ;;
+            '!' | "L" | "H") priority=$i; shift ;;
+
+            # Out when you find the first letter, may be the category or
+            # free text
+            * ) break ;;
+        esac
+    done
+
+    cat $TODO_LIST | sed -n -e "/^[0-9][0-9]* \[$status\] ($priority)/p" |
+        prettify
+}
+
+highlightTodo() {
+    id=$1
+    sed "s/^$id.*/$2&$TODO_COL_NO/"
+}
+
+prettify() {
+
+    _lastTodoID
+    if [ $TODO_LAST_ID -le 9 ]; then
+        TODO_ID_DIGITS=1
+        colorify
+    elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
+        TODO_ID_DIGITS=2
+        sed "s/^\([0-9]\) \[/ \1 [/" | colorify
+
+    elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
+        #TODO_ID_DIGITS=3
+        sed "s/^\([0-9]\) \[/  \1 [/" |
+        sed "s/^\([0-9]\{2\}\) \[/ \1 [/" | colorify
+    else
+        TODO_ID_DIGITS=4 # greater than 1000!!!
+    fi
+}
+
+colorify() {
+    sed "s/^[a-zA-Z].*/$TODO_COL_CAT&$TODO_COL_NO/" |
+    sed "s/\([0-9][0-9]* \[\)\(x\)\]\|\(?\)\]/\1$TODO_COL_DONE\2$TODO_COL_PEND\3$TODO_COL_NO]/"|
+    sed "s/\((\)\(!\))\|\(H\))\|\(L\))/\1$TODO_COL_BUG\2$TODO_COL_H\3$TODO_COL_L\4$TODO_COL_NO)/"
+}
+
+clean() {
+    rm $TODO_LIST
+    touch $TODO_LIST
 }
 
 
@@ -213,19 +391,24 @@ lsTodoAll() {
 # $0 is still the script name
 # $1 is the command
 
-action=$1
-shift;
+# Reset any color
+echo $TODO_COL_NO
+
+if [ $# -eq 0 ]; then
+  lsTodoAll
+  exit 1
+fi
+
+action=$1;shift
 
 case $action in
 
 
-"a" | "add" )
-    add "$@"
-;;
+"a" | "add" ) add "$@" ;;
+"d" | "del" ) delete $* ;;
 
 # List TODOs by category
 "ls" )
-
     if [ $# -eq 0 ]; then
         # No category, list all
         lsTodoAll
@@ -234,17 +417,19 @@ case $action in
     fi
 ;;
 
+# Filter, find, order...
+"/" | "f" ) filter "$@" ;;
 
 # List categories
 "lscat" ) lsCategories ;;
 
 
 # Mark as done, pending or todo
-"x" | "?" | "o" ) mark $action $@ ;;
+"x" | "?" | "o" ) mark $action $* ;;
 "m" | "mark" )
     marker=$1
     shift;
-    mark $marker $@
+    mark $marker $*
 ;;
 
 
