@@ -1,0 +1,8 @@
+History Service
+===============
+1 [x] ( ) HistorySparqlHandler - Make the class a thread
+2 [ ] (!) Use only one DBWriter instance to avoid concurrency
+
+Ciao
+====
+3 [ ] ( ) Ciao tasks
