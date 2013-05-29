@@ -1,59 +1,13 @@
 #! /bin/sh
 
-TODO_LIST=./todo
 _DEBUG=1
 
 # == PROCESS OPTIONS ==
 while getopts ":fhpcnNaAtTvVx+@Pd:" Option
 do
   case $Option in
-    '@' )
-        ## HIDE_CONTEXT_NAMES starts at zero (false); increment it to one
-        ##   (true) the first time this flag is seen. Each time the flag
-        ##   is seen after that, increment it again so that an even
-        ##   number shows context names and an odd number hides context
-        ##   names.
-        : $(( HIDE_CONTEXT_NAMES++ ))
-        if [ $(( $HIDE_CONTEXT_NAMES % 2 )) -eq 0 ]
-        then
-            ## Zero or even value -- show context names
-            unset HIDE_CONTEXTS_SUBSTITUTION
-        else
-            ## One or odd value -- hide context names
-            export HIDE_CONTEXTS_SUBSTITUTION='[[:space:]]@[[:graph:]]\{1,\}'
-        fi
-        ;;
-    '+' )
-        ## HIDE_PROJECT_NAMES starts at zero (false); increment it to one
-        ##   (true) the first time this flag is seen. Each time the flag
-        ##   is seen after that, increment it again so that an even
-        ##   number shows project names and an odd number hides project
-        ##   names.
-        : $(( HIDE_PROJECT_NAMES++ ))
-        if [ $(( $HIDE_PROJECT_NAMES % 2 )) -eq 0 ]
-        then
-            ## Zero or even value -- show project names
-            unset HIDE_PROJECTS_SUBSTITUTION
-        else
-            ## One or odd value -- hide project names
-            export HIDE_PROJECTS_SUBSTITUTION='[[:space:]][+][[:graph:]]\{1,\}'
-        fi
-        ;;
-    a )
-        OVR_TODOTXT_AUTO_ARCHIVE=0
-        ;;
-    A )
-        OVR_TODOTXT_AUTO_ARCHIVE=1
-        ;;
-    c )
-        OVR_TODOTXT_PLAIN=0
-        ;;
-    d )
-        TODOTXT_CFG_FILE=$OPTARG
-        ;;
-    f )
-        OVR_TODOTXT_FORCE=1
-        ;;
+
+
     h )
         # Short-circuit option parsing and forward to the action.
         # Cannot just invoke shorthelp() because we need the configuration
@@ -61,45 +15,11 @@ do
         set -- '-h' 'shorthelp'
         OPTIND=2
         ;;
-    n )
-        OVR_TODOTXT_PRESERVE_LINE_NUMBERS=0
-        ;;
-    N )
-        OVR_TODOTXT_PRESERVE_LINE_NUMBERS=1
-        ;;
-    p )
-        OVR_TODOTXT_PLAIN=1
-        ;;
-    P )
-        ## HIDE_PRIORITY_LABELS starts at zero (false); increment it to one
-        ##   (true) the first time this flag is seen. Each time the flag
-        ##   is seen after that, increment it again so that an even
-        ##   number shows priority labels and an odd number hides priority
-        ##   labels.
-        : $(( HIDE_PRIORITY_LABELS++ ))
-        if [ $(( $HIDE_PRIORITY_LABELS % 2 )) -eq 0 ]
-        then
-            ## Zero or even value -- show priority labels
-            unset HIDE_PRIORITY_SUBSTITUTION
-        else
-            ## One or odd value -- hide priority labels
-            export HIDE_PRIORITY_SUBSTITUTION="([A-Z])[[:space:]]"
-        fi
-        ;;
-    t )
-        OVR_TODOTXT_DATE_ON_ADD=1
-        ;;
-    T )
-        OVR_TODOTXT_DATE_ON_ADD=0
-        ;;
     v )
-        : $(( TODOTXT_VERBOSE++ ))
+        : $(( TODO_VERBOSE++ ))
         ;;
     V )
         version
-        ;;
-    x )
-        OVR_TODOTXT_DISABLE_FILTER=1
         ;;
   esac
 done
@@ -107,18 +27,20 @@ done
 # Shift the params to delete options
 shift $(($OPTIND - 1))
 
-# defaults if not yet defined
-TODOTXT_VERBOSE=${TODOTXT_VERBOSE:-1}
-TODOTXT_PLAIN=${TODOTXT_PLAIN:-0}
-TODOTXT_CFG_FILE=${TODOTXT_CFG_FILE:-$HOME/.todo/config}
-TODOTXT_FORCE=${TODOTXT_FORCE:-0}
-TODOTXT_PRESERVE_LINE_NUMBERS=${TODOTXT_PRESERVE_LINE_NUMBERS:-1}
-TODOTXT_AUTO_ARCHIVE=${TODOTXT_AUTO_ARCHIVE:-1}
-TODOTXT_DATE_ON_ADD=${TODOTXT_DATE_ON_ADD:-0}
-TODOTXT_DEFAULT_ACTION=${TODOTXT_DEFAULT_ACTION:-}
-TODOTXT_SORT_COMMAND=${TODOTXT_SORT_COMMAND:-env LC_COLLATE=C sort -f -k2}
-TODOTXT_DISABLE_FILTER=${TODOTXT_DISABLE_FILTER:-}
-TODOTXT_FINAL_FILTER=${TODOTXT_FINAL_FILTER:-cat}
+# Defaults if not defined
+TODO_LIST=${TODO_LIST:-./todo}
+TODO_VERBOSE=${TODO_VERBOSE:-1}
+TODO_CFG_FILE=${TODO_CFG_FILE:-$HOME/.todo/config}
+
+TODO_CLEAR_TERM=${TODO_CLEAR_TERM:-1}
+
+TODO_FILTER_BYPASS=1
+TODO_FILTER_STATUS='.'
+TODO_FILTER_PRIORITY='.'
+
+TODO_HL_ID=0
+TODO_HL_COL=0
+
 
 # Colors
 BLACK=30
@@ -140,6 +62,7 @@ TODO_COL_CAT=`echo -e "\e[$BOLD;${BLUE}m"`
 
 TODO_COL_NEW=`echo -e "\e[$NORMAL;$(( $GREEN+10 ))m"`
 TODO_COL_DEL=`echo -e "\e[$NORMAL;$(( $RED+10 ))m"`
+TODO_COL_UPD=`echo -e "\e[$NORMAL;$(( $YELLOW+10 ))m"`
 
 TODO_COL_DONE=`echo -e "\e[$BOLD;${RED}m"`
 TODO_COL_PEND=`echo -e "\e[$BOLD;${YELLOW}m"`
@@ -164,6 +87,9 @@ _lastTodoID() {
                   sort -n |
                   sed -n -e '$p' |
                   sed "s/^\([0-9][0-9]*\).*/\1/"`
+
+    # When there are not TODOs
+    [ -z "$TODO_LAST_ID" ] && TODO_LAST_ID=0
 }
 
 add() {
@@ -173,14 +99,14 @@ add() {
     cat=$1; shift
 
     if [ $# -eq 0 ]; then
-        echo "Cant create an empty TODO in category $cat"
+        echo "Can't create an empty TODO in category $cat"
         exit 1;
     fi
 
     found_cat=`lsCategories | sed -n -e "/^$cat$/p"`
     if [ "$found_cat" != "$cat" ]; then
-        echo "Category $cat doesn't exist, creating..."
         createCategory $cat
+        echo -e "Created category $TODO_COL_CAT$cat"
     fi
 
     # Default values
@@ -211,8 +137,10 @@ add() {
     todo="$id [$mark] ($priority) $@"
     sed -i "${line}a $todo" $TODO_LIST
 
-    lsTodoCategories $cat | highlightTodo $id $TODO_COL_NEW
-    echo "Created TODO in $cat"
+    _setHighlighter $id $TODO_COL_NEW
+
+    lsTodoCategories $cat | draw
+    echo -e "\nCreated ${TODO_COL_NEW}TODO #${id}${TODO_COL_NO} in '$cat'"
 }
 
 delete() {
@@ -224,7 +152,10 @@ delete() {
         sed -i "/^$id/d" $TODO_LIST
     done
 
-    lsTodoAll | highlightTodo $id $TODO_COL_DEL
+    _setHighlighter $id $TODO_COL_DEL
+
+    lsTodoAll | draw
+    echo -e "\nDeleted ${TODO_COL_DEL}TODO #${id}${TODO_COL_NO} from '...'"
 }
 
 mark() {
@@ -246,8 +177,10 @@ mark() {
         sed -i "s/\($id \)\[.\]/\1[$mark]/" $TODO_LIST
     done
 
+    _setHighlighter $id $TODO_COL_UPD
+
     lsTodoAll
-    echo "TODOs $* marked as $mark"
+    echo -e "\nMarked ${TODO_COL_UPD}TODO #${id}${TODO_COL_NO} as ${TODO_COL_UPD}$mark${TODO_COL_NO}"
 }
 
 setPriority() {
@@ -269,8 +202,10 @@ setPriority() {
         sed -i "s/\($id \[.\] \)(.)/\1($priority)/" $TODO_LIST
     done
 
+    _setHighlighter $id $TODO_COL_UPD
+
     lsTodoAll
-    echo "TODOs $* now has priority $priority"
+    echo -e "\nSet priority for ${TODO_COL_UPD}TODO #${id}${TODO_COL_NO} to ${TODO_COL_UPD}$priority${TODO_COL_NO}"
 }
 
 
@@ -282,12 +217,12 @@ createCategory() {
     cat=$1
 
     # Find string length and print N '='
-    equals=`printf "%${#cat}s" | tr " " "="`
+    underline=`printf "%${#cat}s" | tr " " "="`
 
     if [ `stat -c %s $TODO_LIST` -eq 0 ]; then
-        echo -e "$cat\n$equals" > $TODO_LIST
+        echo -e "$cat\n$underline" > $TODO_LIST
     else
-        sed -i '$a'"\\\n$cat\n$equals" $TODO_LIST
+        sed -i '$a'"\\\n$cat\n$underline" $TODO_LIST
     fi
 }
 
@@ -302,42 +237,143 @@ lsTodoCategories() {
     # $1: category
 
     for category in "$@"; do
-        #sed -n -e "/^$category/,/^[a-zA-Z][.]*/p" $TODO_LIST | sed -n -e "/^[0-9]* \[/p" | prettify
-        sed -n -e "/^$category/,/^$/p" $TODO_LIST | sed '$d' | prettify
+        # Delete the last line only if it is blank
+        sed -n -e "/^$category/,/^$/p" $TODO_LIST | sed '${/^$/d;}' | draw
     done
 }
 
 lsTodoAll() {
-    _lastTodoID
-    if [ $TODO_LAST_ID -le 9 ]; then
-        TODO_ID_DIGITS=1
-    elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
-        TODO_ID_DIGITS=2
-        #cat $TODO_LIST | sed "s/^\([0-9]\) \[/ \1 [/" | prettify
-
-    elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
-        TODO_ID_DIGITS=3
-        #cat $TODO_LIST | sed "s/^\([0-9]\) \[/  \1 [/" |
-        #    sed "s/^\([0-9]\{2\}\) \[/ \1 [/" | prettify
-
-    else
-        TODO_ID_DIGITS=4 # greater than 1000!!!
-    fi
-
-    cat $TODO_LIST | prettify
+    cat $TODO_LIST | draw
 }
 
-filter() {
+_setFilter() {
     # Filter by params
 
+    # Default
+    TODO_FILTER_STATUS=''
+    TODO_FILTER_PRIORITY=''
+
+    # Search status and priority
+    for i in "$@"; do
+
+        if [ ${#i} -eq 2 ]; then
+            echo 'Not yet supported'
+        fi
+
+        case $i in
+
+            '?' | "x" | "o")
+                #if [ "$i" == "o" ]; then i=' '; fi
+                TODO_FILTER_STATUS="${TODO_FILTER_STATUS}$i";
+                TODO_FILTER_BYPASS=0
+                shift
+            ;;
+
+            '!' | "L" | "H" | "0")
+                #if [ "$i" == "0" ]; then i=' '; fi
+                TODO_FILTER_PRIORITY="${TODO_FILTER_PRIORITY}$i";
+                TODO_FILTER_BYPASS=0
+                shift
+            ;;
+
+            # Out when you find the first letter, may be the category or
+            # free text
+            * ) break ;;
+        esac
+    done
+
+    # Put the fucking " "
+    if [ -n "$TODO_FILTER_STATUS" ]; then
+        TODO_FILTER_STATUS="[$TODO_FILTER_STATUS]"
+    else
+        TODO_FILTER_STATUS='.'
+    fi
+
+    if [ -n "$TODO_FILTER_PRIORITY" ]; then
+        TODO_FILTER_PRIORITY="[$TODO_FILTER_PRIORITY]"
+    else
+        TODO_FILTER_PRIORITY='.'
+    fi
+
+}
+
+_setHighlighter() {
+    # Setup highlighter
+    #
+    # $1: ID
+    # $2: Highlight color
+
+    TODO_HL_ID=$1
+    TODO_HL_COL=$2
+}
+
+highlightify() {
+    # Highlight an entire TODO
+    #
+    # $TODO_HL_ID: ID
+    # $TODO_HL_COL: Highlight color
+
+    id=$TODO_HL_ID
+    color=$TODO_HL_COL
+
+    sed "s/^[ ]*$id.*/$color&$TODO_COL_NO/"
+}
+
+columnify() {
+
+    _lastTodoID
+    if [ $TODO_LAST_ID -le 9 ]; then
+        #TODO_ID_DIGITS=1
+        colorify
+    elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
+        #TODO_ID_DIGITS=2
+        sed "s/^\([0-9]\) \[/ \1 [/"
+
+    elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
+        #TODO_ID_DIGITS=3
+        sed "s/^\([0-9]\) \[/  \1 [/" |
+        sed "s/^\([0-9]\{2\}\) \[/ \1 [/"
+    else
+        #TODO_ID_DIGITS=4
+        sed "s/^\([0-9]\) \[/   \1 [/" |
+        sed "s/^\([0-9]\{2\}\) \[/  \1 [/" |
+        sed "s/^\([0-9]\{3\}\) \[/ \1 [/"
+    fi
+}
+
+colorify() {
+    sed "s/^[a-zA-Z].*/$TODO_COL_CAT&$TODO_COL_NO/" |
+
+    if [ $TODO_HL_ID -ne 0 ]; then
+        highlightify
+    else
+        #sed "s/^[a-zA-Z].*/$TODO_COL_CAT&$TODO_COL_NO/" |
+        sed "s/\([0-9][0-9]* \[\)\(x\)\]\|\(?\)\]/\1$TODO_COL_DONE\2$TODO_COL_PEND\3$TODO_COL_NO]/"|
+        sed "s/\((\)\(!\))\|\(H\))\|\(L\))/\1$TODO_COL_BUG\2$TODO_COL_H\3$TODO_COL_L\4$TODO_COL_NO)/"
+    fi
+}
+
+_setFilter_DONT_USE() {
+    # Set the filtering params
+    #
+    # $@:   list of space separated values. The '^' filters out. E.g.:
+    #       '^x' or '? ': All but done [x]; '!': Only critical priority
 
     # Default
     status='.'
     priority='.'
 
+    if [ -n $1 ]; then status=$1; fi
+    if [ -n $2 ]; then priority=$2; fi
+
+<<C
     # Search status and priority
     for i in "$@"; do
-        case $i in
+        for (( i=0; i<${#foo}; i++ )); do
+          echo ${foo:$i:1}
+        done
+
+        #case $i in
             '?' | "x" | "o") status=$i; shift ;;
             '!' | "L" | "H") priority=$i; shift ;;
 
@@ -346,66 +382,70 @@ filter() {
             * ) break ;;
         esac
     done
-
-    cat $TODO_LIST | sed -n -e "/^[0-9][0-9]* \[$status\] ($priority)/p" |
-        prettify
+C
 }
 
-highlightTodo() {
-    id=$1
-    sed "s/^$id.*/$2&$TODO_COL_NO/"
+filter() {
+
+    status='.'
+    priority='.'
+
+    if [ -n $TODO_FILTER_STATUS ]; then status=$TODO_FILTER_STATUS; fi
+    if [ -n $TODO_FILTER_PRIORITY ]; then priority=$TODO_FILTER_PRIORITY; fi
+
+    sed -n -e "/\(^[0-9][0-9]* \[$status\] ($priority)\)\|\(^[^0-9]\)\|\(^$\)/p"
 }
 
-prettify() {
+draw() {
+    # Always pipe to this function to print!
 
-    _lastTodoID
-    if [ $TODO_LAST_ID -le 9 ]; then
-        TODO_ID_DIGITS=1
-        colorify
-    elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
-        TODO_ID_DIGITS=2
-        sed "s/^\([0-9]\) \[/ \1 [/" | colorify
-
-    elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
-        #TODO_ID_DIGITS=3
-        sed "s/^\([0-9]\) \[/  \1 [/" |
-        sed "s/^\([0-9]\{2\}\) \[/ \1 [/" | colorify
+    if [ $TODO_FILTER_BYPASS -eq 0 ]; then
+        filter | columnify | colorify
     else
-        TODO_ID_DIGITS=4 # greater than 1000!!!
+                 columnify | colorify
     fi
 }
 
-colorify() {
-    sed "s/^[a-zA-Z].*/$TODO_COL_CAT&$TODO_COL_NO/" |
-    sed "s/\([0-9][0-9]* \[\)\(x\)\]\|\(?\)\]/\1$TODO_COL_DONE\2$TODO_COL_PEND\3$TODO_COL_NO]/"|
-    sed "s/\((\)\(!\))\|\(H\))\|\(L\))/\1$TODO_COL_BUG\2$TODO_COL_H\3$TODO_COL_L\4$TODO_COL_NO)/"
-}
 
 clean() {
     rm $TODO_LIST
     touch $TODO_LIST
 }
 
-
-# Main, execute the command
+##########################################################################
+#                                   MAIN
 # $0 is still the script name
 # $1 is the command
 
+if [ ! -e $TODO_LIST ];then touch $TODO_LIST; echo "Created file $TODO_LIST!"; fi
+if [ ! -r $TODO_LIST ];then echo "File $TODO_LIST not readable"; exit 1; fi
+if [ ! -w $TODO_LIST ];then echo "File $TODO_LIST not writable"; exit 1; fi
+
 # Reset any color
 echo $TODO_COL_NO
+[ $TODO_CLEAR_TERM -eq 1 ] && clear
 
+# Default action
 if [ $# -eq 0 ]; then
-  lsTodoAll
-  exit 1
+
+    # Set output filter
+    TODO_FILTER_BYPASS=0
+    TODO_FILTER_STATUS='[^x]'
+    TODO_FILTER_PRIORITY='.'
+
+    lsTodoAll
+    exit 1
 fi
 
+# Execute the command
 action=$1;shift
 
 case $action in
 
 
 "a" | "add" ) add "$@" ;;
-"d" | "del" ) delete $* ;;
+
+"r" | "rm" ) delete $* ;;
 
 # List TODOs by category
 "ls" )
@@ -418,7 +458,10 @@ case $action in
 ;;
 
 # Filter, find, order...
-"/" | "f" ) filter "$@" ;;
+"/" | "f" )
+    _setFilter "$@"
+    lsTodoAll
+;;
 
 # List categories
 "lscat" ) lsCategories ;;
@@ -441,6 +484,12 @@ case $action in
     setPriority $priority $*
 ;;
 
+# Test
+"t" )
+    TODO_HL_ID=10
+    TODO_HL_COL=$TODO_COL_NEW
+    lsTodoAll
+;;
 
 * )
     echo 'Any help?'
