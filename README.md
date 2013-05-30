@@ -73,12 +73,12 @@ t / ^x
 t ^x
 t
 
-# Mark a TODO, that is, mark its status
+# Mark the TODO 14, that is, set its status
 t 14 mark x
 t 14 m x
 t 14 x
 
-# Set priority
+# Set priority of TODO 6
 t 6 priority !
 t 6 p !
 t 6 !

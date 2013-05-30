@@ -1,5 +1,23 @@
+# To do list managed with: TODO http://github.com/lucafaggianelli/todo
+#
+# You can edit it by hand following the format:
+#
+# 28  = Unique id in entire list!
+# [ ] = Status. [x] done, [?] pending, [ ] to do
+# ( ) = Priority. (!) critical, (H) high, (L) low
+# text= TODO body on 1 line!
+# #   = 1 line comment
+#
+# Note: No spaces at the beginning of the line! 1 space to separate elements!
+#
+# Category
+# ========
+# 28 [x] (!) TODO body on one line
+
 Core
 ====
+29 [x] (!) ID regex matches all numbers
+28 [x] (L) Comments on the head as help
 27 [ ] (!) Use one list for all project subfolders
 23 [ ] (!) Category regex match only the start, not whole word. Not reliable
 19 [x] (!) Visualization error creating new category
@@ -13,12 +31,12 @@ Core
 6 [ ] (H) Options support
 5 [ ] ( ) Delete a category
 4 [ ] (L) config file
-2 [ ] ( ) Edit TODO
+2 [x] (!) Edit TODO
 1 [x] (H) Create TODO file if it doesnt exist and check permissions
 
 Commit
 ======
-26 [ ] (H) Bind to git pre commit hook
+26 [ ] (L) Bind to git pre commit hook
 25 [ ] (H) Need reindexing
 3 [ ] (H) Create commit feature to build changelog file and clean TODO
 

@@ -74,19 +74,26 @@ TODO_COL_L=`echo -e "\e[$BOLD;${GREEN}m"`
 
 ######## Options parsing end
 
+
+# REGEX
+
+TODO_RE_TODO_LINE='^[0-9][0-9]*'
+
+# REGEX END
+
 DEBUG() {
     [ $_DEBUG -ne 0 ] && $@
 }
 
 _countTodo() {
-    TODO_COUNT=`sed -n -e '/^[0-9]* \[/p' $TODO_LIST | sed -n '$='`
+    TODO_COUNT=`sed -n -e "/$TODO_RE_TODO_LINE \[/p" $TODO_LIST | sed -n '$='`
 }
 
 _lastTodoID() {
-    TODO_LAST_ID=`sed -n -e "/^[0-9]/p" $TODO_LIST |
+    TODO_LAST_ID=`sed -n -e "/$TODO_RE_TODO_LINE/p" $TODO_LIST |
                   sort -n |
                   sed -n -e '$p' |
-                  sed "s/^\([0-9][0-9]*\).*/\1/"`
+                  sed "s/\($TODO_RE_TODO_LINE\).*/\1/"`
 
     # When there are not TODOs
     [ -z "$TODO_LAST_ID" ] && TODO_LAST_ID=0
@@ -149,7 +156,7 @@ delete() {
     # $*: ids
 
     for id in $*; do
-        sed -i "/^$id/d" $TODO_LIST
+        sed -i "/^$id /d" $TODO_LIST
     done
 
     _setHighlighter $id $TODO_COL_DEL
@@ -157,6 +164,25 @@ delete() {
     lsTodoAll | draw
     echo -e "\nDeleted ${TODO_COL_DEL}TODO #${id}${TODO_COL_NO} from '...'"
 }
+
+edit() {
+    # Edit a TODO
+    #
+    # $1: ID
+
+    id=$1
+
+    body=`sed -n "/^$id /s/^$id \[.\] (.) \(.*\)/\1/p" $TODO_LIST`
+
+    read -e -p "Edit> " -i "$body" body_new
+
+    _setHighlighter $id $TODO_COL_UPD
+
+    sed "s/\(^$id \[.\] (.) \).*/\1$body_new/" $TODO_LIST | draw
+
+    echo -e "Updated body of ${TODO_COL_UPD}TODO #$id${TODO_COL_NO}. Old: ${TODO_COL_UPD}${body}${TODO_COL_NO}"
+}
+
 
 mark() {
     # Mark as done, pending or todo
@@ -174,7 +200,7 @@ mark() {
     # TODO: put ids in or so dont iterate
     shift;
     for id in $*; do
-        sed -i "s/\($id \)\[.\]/\1[$mark]/" $TODO_LIST
+        sed -i "s/\(^$id \)\[.\]/\1[$mark]/" $TODO_LIST
     done
 
     _setHighlighter $id $TODO_COL_UPD
@@ -199,7 +225,7 @@ setPriority() {
     # TODO: put ids in or so dont iterate
     shift;
     for id in $*; do
-        sed -i "s/\($id \[.\] \)(.)/\1($priority)/" $TODO_LIST
+        sed -i "s/\(^$id \[.\] \)(.)/\1($priority)/" $TODO_LIST
     done
 
     _setHighlighter $id $TODO_COL_UPD
@@ -226,6 +252,8 @@ createCategory() {
     fi
 }
 
+## List actions ##
+
 lsCategories() {
     # List categories
     sed -n -e '/^[A-Za-z]/p' $TODO_LIST
@@ -245,6 +273,10 @@ lsTodoCategories() {
 lsTodoAll() {
     cat $TODO_LIST | draw
 }
+
+
+
+### Core functions ###
 
 _setFilter() {
     # Filter by params
@@ -316,7 +348,7 @@ highlightify() {
     id=$TODO_HL_ID
     color=$TODO_HL_COL
 
-    sed "s/^[ ]*$id.*/$color&$TODO_COL_NO/"
+    sed "s/^[ ]*$id .*/$color&$TODO_COL_NO/"
 }
 
 columnify() {
@@ -327,7 +359,7 @@ columnify() {
         colorify
     elif [ $TODO_LAST_ID -ge 10 ] && [ $TODO_LAST_ID -le 99 ]; then
         #TODO_ID_DIGITS=2
-        sed "s/^\([0-9]\) \[/ \1 [/"
+        sed "s/^\(^[0-9]\) \[/ \1 [/"
 
     elif [ $TODO_LAST_ID -ge 100 ] && [ $TODO_LAST_ID -le 999 ]; then
         #TODO_ID_DIGITS=3
@@ -347,7 +379,6 @@ colorify() {
     if [ $TODO_HL_ID -ne 0 ]; then
         highlightify
     else
-        #sed "s/^[a-zA-Z].*/$TODO_COL_CAT&$TODO_COL_NO/" |
         sed "s/\([0-9][0-9]* \[\)\(x\)\]\|\(?\)\]/\1$TODO_COL_DONE\2$TODO_COL_PEND\3$TODO_COL_NO]/"|
         sed "s/\((\)\(!\))\|\(H\))\|\(L\))/\1$TODO_COL_BUG\2$TODO_COL_H\3$TODO_COL_L\4$TODO_COL_NO)/"
     fi
@@ -396,13 +427,21 @@ filter() {
     sed -n -e "/\(^[0-9][0-9]* \[$status\] ($priority)\)\|\(^[^0-9]\)\|\(^$\)/p"
 }
 
+comments() {
+    # To remove blank lines before content use:
+    # sed '/./,$!d'
+
+    # Remove comments
+    sed "/^[#]/d"
+}
+
 draw() {
     # Always pipe to this function to print!
 
     if [ $TODO_FILTER_BYPASS -eq 0 ]; then
-        filter | columnify | colorify
+        comments | filter | columnify | colorify
     else
-                 columnify | colorify
+        comments          | columnify | colorify
     fi
 }
 
@@ -421,8 +460,7 @@ if [ ! -e $TODO_LIST ];then touch $TODO_LIST; echo "Created file $TODO_LIST!"; f
 if [ ! -r $TODO_LIST ];then echo "File $TODO_LIST not readable"; exit 1; fi
 if [ ! -w $TODO_LIST ];then echo "File $TODO_LIST not writable"; exit 1; fi
 
-# Reset any color
-echo $TODO_COL_NO
+# Clear terminal
 [ $TODO_CLEAR_TERM -eq 1 ] && clear
 
 # Default action
@@ -457,14 +495,17 @@ case $action in
     fi
 ;;
 
+# List categories
+"lscat" ) lsCategories ;;
+
+# Edit TODO
+"e" | "edit" ) edit $1 ;;
+
 # Filter, find, order...
 "/" | "f" )
     _setFilter "$@"
     lsTodoAll
 ;;
-
-# List categories
-"lscat" ) lsCategories ;;
 
 
 # Mark as done, pending or todo
