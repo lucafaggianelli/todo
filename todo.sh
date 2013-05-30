@@ -29,6 +29,7 @@ shift $(($OPTIND - 1))
 
 # Defaults if not defined
 TODO_LIST=${TODO_LIST:-./todo}
+TODO_LIST_DEPTH=${TODO_LIST_DEPTH:-3}
 TODO_VERBOSE=${TODO_VERBOSE:-1}
 TODO_CFG_FILE=${TODO_CFG_FILE:-$HOME/.todo/config}
 
@@ -445,6 +446,63 @@ draw() {
     fi
 }
 
+_createListFile() {
+
+new_list=`cat <<HERE
+# To do list managed with: TODO http://github.com/lucafaggianelli/todo
+#
+# You can edit it by hand following the format:
+#
+# 28  = Unique id in entire list!
+# [ ] = Status. [x] done, [?] pending, [ ] to do
+# ( ) = Priority. (!) critical, (H) high, (L) low
+# text= TODO body on 1 line!
+# #   = 1 line comment
+#
+# Note: No spaces at the beginning of the line! 1 space to separate elements!
+#
+# Category
+# ========
+# 28 [x] (!) TODO body on one line
+HERE`
+
+    # Check again that file doesn't exist, you don't want to mess up the user list
+    # also use append (>>) as a triple check!
+    if [ ! -e "$TODO_LIST" ]; then
+        touch "$TODO_LIST"
+        echo "$new_list" >> "$TODO_LIST"
+    fi
+}
+
+
+_findTodoListFile() {
+    for (( i=0; i<=TODO_LIST_DEPTH; i++ )); do
+        depth=''
+        for (( j=0; j<i; j++ )); do
+            depth="$depth../"
+        done
+
+        if [[ -e "${depth}${TODO_LIST}" && ! -d "${depth}${TODO_LIST}" ]]; then
+            if [ ! -r "${depth}${TODO_LIST}" ];then
+                echo "File "${depth}${TODO_LIST}" not readable"
+                exit 1
+            fi
+
+            if [ ! -w "${depth}${TODO_LIST}" ];then
+                echo "File "${depth}${TODO_LIST}" not writable"
+                exit 1
+            fi
+
+            TODO_LIST="${depth}${TODO_LIST}"
+            return
+        fi
+    done
+
+    echo "File $TODO_LIST doesn't exist here, till $TODO_LIST_DEPTH levels up."
+    read -e -p "Create the file $TODO_LIST? (y/n)> " decision
+    [ "$decision" == 'y' ] && _createListFile
+    exit 1
+}
 
 clean() {
     rm $TODO_LIST
@@ -456,9 +514,7 @@ clean() {
 # $0 is still the script name
 # $1 is the command
 
-if [ ! -e $TODO_LIST ];then touch $TODO_LIST; echo "Created file $TODO_LIST!"; fi
-if [ ! -r $TODO_LIST ];then echo "File $TODO_LIST not readable"; exit 1; fi
-if [ ! -w $TODO_LIST ];then echo "File $TODO_LIST not writable"; exit 1; fi
+_findTodoListFile
 
 # Clear terminal
 [ $TODO_CLEAR_TERM -eq 1 ] && clear
@@ -527,9 +583,7 @@ case $action in
 
 # Test
 "t" )
-    TODO_HL_ID=10
-    TODO_HL_COL=$TODO_COL_NEW
-    lsTodoAll
+    echo 'test'
 ;;
 
 * )
