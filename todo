@@ -19,7 +19,7 @@ Core
 29 [x] (!) ID regex matches all numbers
 28 [x] (L) Comments on the head as help
 27 [x] (!) Use one list for all project subfolders
-23 [ ] (!) Category regex match only the start, not whole word. Not reliable
+23 [ ] (L) Category regex match only the start, not whole word. Not reliable
 19 [x] (!) Visualization error creating new category
 17 [?] (H) Design new CLI where first argument is ID or category
 16 [ ] ( ) Move TODO in categories
@@ -42,9 +42,9 @@ Commit
 
 Sort
 ====
-20 [?] (!) Set filter params for search and hide
+20 [x] (!) Set filter params for search and hide
 9 [ ] (H) Order by priority
-10 [?] (H) Filter by priority or status
+10 [x] (H) Filter by priority or status
 
 Multiuser
 =========

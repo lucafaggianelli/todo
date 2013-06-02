@@ -38,6 +38,7 @@ TODO_CLEAR_TERM=${TODO_CLEAR_TERM:-1}
 TODO_FILTER_BYPASS=1
 TODO_FILTER_STATUS='.'
 TODO_FILTER_PRIORITY='.'
+TODO_HIDE_DONE=${TODO_HIDE_DONE:-1}
 
 TODO_HL_ID=0
 TODO_HL_COL=0
@@ -133,16 +134,20 @@ add() {
         esac
     done
 
-    # Count all the TODOs
+    # Check for non empty body
+    body="$@"
+    [ -z "$body" ] && exit 1
+
+    # Find the last TODO ID (which may be not the count!)
     _lastTodoID
     id=$(( $TODO_LAST_ID+1 ))
 
     # Line number of the '=' below category name
     line=$(( `sed -n -e "/^$cat$/=" $TODO_LIST`+1 ))
-    if [ -z $line ]; then exit 1; fi
+    if [ -z "$line" ]; then exit 1; fi
 
     # Write the TODO
-    todo="$id [$mark] ($priority) $@"
+    todo="$id [$mark] ($priority) $body"
     sed -i "${line}a $todo" $TODO_LIST
 
     _setHighlighter $id $TODO_COL_NEW
@@ -181,11 +186,11 @@ edit() {
 
     sed "s/\(^$id \[.\] (.) \).*/\1$body_new/" $TODO_LIST | draw
 
-    echo -e "Updated body of ${TODO_COL_UPD}TODO #$id${TODO_COL_NO}. Old: ${TODO_COL_UPD}${body}${TODO_COL_NO}"
+    echo -e "\nUpdated body of ${TODO_COL_UPD}TODO #$id${TODO_COL_NO}. Old: ${TODO_COL_UPD}${body}${TODO_COL_NO}"
 }
 
 
-mark() {
+setStatus() {
     # Mark as done, pending or todo
     #
     # $1: ? pending, x done, 'o' todo
@@ -204,6 +209,8 @@ mark() {
         sed -i "s/\(^$id \)\[.\]/\1[$mark]/" $TODO_LIST
     done
 
+    # Bypass filter otherwise may hide the todo with the new status
+    TODO_FILTER_BYPASS=1
     _setHighlighter $id $TODO_COL_UPD
 
     lsTodoAll
@@ -229,6 +236,8 @@ setPriority() {
         sed -i "s/\(^$id \[.\] \)(.)/\1($priority)/" $TODO_LIST
     done
 
+    # Bypass filter otherwise may hide the todo with the new priority
+    TODO_FILTER_BYPASS=1
     _setHighlighter $id $TODO_COL_UPD
 
     lsTodoAll
@@ -254,6 +263,10 @@ createCategory() {
 }
 
 ## List actions ##
+
+showTodo() {
+    sed -n -e "/^$1 /p" $TODO_LIST | draw
+}
 
 lsCategories() {
     # List categories
@@ -282,48 +295,47 @@ lsTodoAll() {
 _setFilter() {
     # Filter by params
 
-    # Default
     TODO_FILTER_STATUS=''
     TODO_FILTER_PRIORITY=''
 
     # Search status and priority
     for i in "$@"; do
 
-        if [ ${#i} -eq 2 ]; then
-            echo 'Not yet supported'
-        fi
+        # Use the == "$i" for enhanced reliability due to strange chars
+        if [[ `echo $i | sed -n '/^^*[x?]/p'` == "$i" ]]; then
 
-        case $i in
-
-            '?' | "x" | "o")
                 #if [ "$i" == "o" ]; then i=' '; fi
-                TODO_FILTER_STATUS="${TODO_FILTER_STATUS}$i";
+                TODO_FILTER_STATUS="${TODO_FILTER_STATUS}[$i]\|";
                 TODO_FILTER_BYPASS=0
                 shift
-            ;;
 
-            '!' | "L" | "H" | "0")
+        elif [[ `echo $i | sed -n '/^^*[!HL]/p'` == "$i" ]]; then
+
                 #if [ "$i" == "0" ]; then i=' '; fi
-                TODO_FILTER_PRIORITY="${TODO_FILTER_PRIORITY}$i";
+                TODO_FILTER_PRIORITY="${TODO_FILTER_PRIORITY}[$i]\|";
                 TODO_FILTER_BYPASS=0
                 shift
-            ;;
 
+        elif [[ $i == '*' || $i == '.' ]]; then
+            TODO_FILTER_STATUS="."
+            TODO_FILTER_PRIORITY="."
+            TODO_FILTER_BYPASS=0
+        else
             # Out when you find the first letter, may be the category or
             # free text
-            * ) break ;;
-        esac
+            break
+        fi
     done
 
-    # Put the fucking " "
+    # The filter has been emptied at the beginning of the function
     if [ -n "$TODO_FILTER_STATUS" ]; then
-        TODO_FILTER_STATUS="[$TODO_FILTER_STATUS]"
+        TODO_FILTER_STATUS="\($TODO_FILTER_STATUS\)"
     else
         TODO_FILTER_STATUS='.'
     fi
 
     if [ -n "$TODO_FILTER_PRIORITY" ]; then
-        TODO_FILTER_PRIORITY="[$TODO_FILTER_PRIORITY]"
+        TODO_FILTER_PRIORITY="\($TODO_FILTER_PRIORITY\)"
     else
         TODO_FILTER_PRIORITY='.'
     fi
@@ -385,51 +397,16 @@ colorify() {
     fi
 }
 
-_setFilter_DONT_USE() {
-    # Set the filtering params
-    #
-    # $@:   list of space separated values. The '^' filters out. E.g.:
-    #       '^x' or '? ': All but done [x]; '!': Only critical priority
-
-    # Default
-    status='.'
-    priority='.'
-
-    if [ -n $1 ]; then status=$1; fi
-    if [ -n $2 ]; then priority=$2; fi
-
-<<C
-    # Search status and priority
-    for i in "$@"; do
-        for (( i=0; i<${#foo}; i++ )); do
-          echo ${foo:$i:1}
-        done
-
-        #case $i in
-            '?' | "x" | "o") status=$i; shift ;;
-            '!' | "L" | "H") priority=$i; shift ;;
-
-            # Out when you find the first letter, may be the category or
-            # free text
-            * ) break ;;
-        esac
-    done
-C
-}
-
 filter() {
 
-    status='.'
-    priority='.'
-
-    if [ -n $TODO_FILTER_STATUS ]; then status=$TODO_FILTER_STATUS; fi
-    if [ -n $TODO_FILTER_PRIORITY ]; then priority=$TODO_FILTER_PRIORITY; fi
+    status=${TODO_FILTER_STATUS:-'.'}
+    priority=${TODO_FILTER_PRIORITY:-'.'}
 
     sed -n -e "/\(^[0-9][0-9]* \[$status\] ($priority)\)\|\(^[^0-9]\)\|\(^$\)/p"
 }
 
 comments() {
-    # To remove blank lines before content use:
+    # To remove blank lines before content, use:
     # sed '/./,$!d'
 
     # Remove comments
@@ -519,31 +496,92 @@ _findTodoListFile
 # Clear terminal
 [ $TODO_CLEAR_TERM -eq 1 ] && clear
 
+# Set filter for user preferences
+[ $TODO_HIDE_DONE -eq 1 ] && _setFilter '^x'
+
 # Default action
 if [ $# -eq 0 ]; then
-
-    # Set output filter
-    TODO_FILTER_BYPASS=0
-    TODO_FILTER_STATUS='[^x]'
-    TODO_FILTER_PRIORITY='.'
-
     lsTodoAll
     exit 1
 fi
 
-# Execute the command
+# Fetch the command
 action=$1;shift
 
+
+# Smart CLI
+# Workaround for / command
+TODO_ID=`echo $action | sed -n '/^[0-9][0-9]*$/p'`
+[ `echo $action | sed -n '/^[a-zA-Z][a-zA-Z]*$/p'` ] &&
+    TODO_CAT=`lsCategories | sed -n "/^$action$/p"` || TODO_CAT=''
+
+
+# You selected a TODO what next?
+if [ -n "$TODO_ID" ]; then
+
+    # If no command, show the todo
+    # e.g.: t 14
+    if [ "$#" == "0" ]; then
+        showTodo $TODO_ID
+        exit 1
+
+    # Set status
+    # e.g.: t 14 x
+    elif [[ $1 == 'x' || $1 == '?' || $1 == 'o' ]]; then
+        setStatus $1 $TODO_ID
+        exit 1
+
+    # Set priority
+    # e.g.: t 14 !
+    elif [[ $1 == '!' || $1 == 'H' || $1 == 'L' || $1 == '0' ]]; then
+        setPriority $1 $TODO_ID
+        exit 1
+
+    # Edit
+    # e.g.: t 14 edit
+    elif [[ "$1" == 'edit' || "$1" == 'e' ]]; then
+        edit $TODO_ID
+        exit 1
+
+    # Remove
+    # e.g.: t 14 rm
+    elif [[ "$1" == 'remove' || "$1" == 'rm' ]]; then
+        delete $TODO_ID
+    fi
+
+# You selected a Category what next?
+elif [ -n "$TODO_CAT" ]; then
+
+    # Category as first arg and nothing => lscat
+    # e.g.: t Core
+    if [ "$#" == "0" ];then
+        lsTodoCategories "$TODO_CAT"
+        exit 1
+
+    # If there is something more than the cat, you want to add a TODO into it
+    # t Core ! Great todo
+    else
+        add "$@"
+    fi
+fi
+
+
+### RETROCOMPATIBILITY ###
+
+# Execute a command
 case $action in
 
 
-"a" | "add" ) add "$@" ;;
+"a" | "add" ) add "$@" ;; # Done
 
-"r" | "rm" ) delete $* ;;
+"r" | "rm" ) delete $* ;; # Done
 
 # List TODOs by category
 "ls" )
-    if [ $# -eq 0 ]; then
+    # If you are typing ls, maybe you want to see everything...
+    _setFilter '.'
+
+    if [ "$#" == "0" ]; then
         # No category, list all
         lsTodoAll
     else
@@ -555,7 +593,7 @@ case $action in
 "lscat" ) lsCategories ;;
 
 # Edit TODO
-"e" | "edit" ) edit $1 ;;
+"e" | "edit" ) edit $1 ;; # Done
 
 # Filter, find, order...
 "/" | "f" )
@@ -565,16 +603,16 @@ case $action in
 
 
 # Mark as done, pending or todo
-"x" | "?" | "o" ) mark $action $* ;;
+"x" | "?" | "o" ) setStatus $action $* ;; #Done
 "m" | "mark" )
     marker=$1
     shift;
-    mark $marker $*
+    setStatus $marker $*
 ;;
 
 
 # Set priority
-"!" | "H" | "L" | "0" ) setPriority $action $* ;;
+"!" | "H" | "L" | "0" ) setPriority $action $* ;; # Done
 "p" | "priority" )
     priority=$1
     shift;
