@@ -16,6 +16,7 @@
 
 Core
 ====
+30 [ ] (H) Check command success or failure
 29 [x] (!) ID regex matches all numbers
 28 [x] (L) Comments on the head as help
 27 [x] (!) Use one list for all project subfolders
@@ -27,7 +28,7 @@ Core
 14 [x] (!) ID assigned to new TODOs must be the last ID + 1 not the count
 11 [x] (L) Align output in columns. The id may be of several digits
 8 [x] (L) Highlight must overwrite everything
-7 [?] (H) Add feedback to user and check result
+7 [x] (H) Add feedback to user and check result
 6 [ ] (H) Options support
 5 [ ] ( ) Delete a category
 4 [ ] (L) config file

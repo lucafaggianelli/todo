@@ -561,7 +561,7 @@ elif [ -n "$TODO_CAT" ]; then
     # If there is something more than the cat, you want to add a TODO into it
     # t Core ! Great todo
     else
-        add "$@"
+        add "$TODO_CAT" "$@"
     fi
 fi
 
